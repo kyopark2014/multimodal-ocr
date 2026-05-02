@@ -98,5 +98,28 @@ python img2tet/img2txt.py contents/page_040.png
 
 <img width="764" height="798" alt="image" src="https://github.com/user-attachments/assets/12eb9547-757a-4768-8b9e-9d564f581a29" />
 
+[example-table.png](./contents/example-table.png)에 대해 OCR을 수행합니다.
+
+<img width="600" alt="image" src="./contents/example-table.png" />
+
+이때의 결과는 아래와 같습니다.
+
+<img width="934" height="714" alt="image" src="https://github.com/user-attachments/assets/565c7333-02dc-46c5-aab9-05ce860aece7" />
+
+[example-table-and-image.png](./contents/example-table-and-image.png)에 대해 OCR을 수행합니다.
+
+<img width="600" alt="image" src="./contents/example-table-and-image.png" />
+
+이때의 Table 결과는 아래와 같습니다.
+
+<img width="752" height="437" alt="image" src="https://github.com/user-attachments/assets/acee1dc0-9469-463b-8430-534fcd9d9c1f" />
+
+그림에 대한 OCR 결과는 아래와 같습니다.
+
+<img width="941" height="699" alt="image" src="https://github.com/user-attachments/assets/c483660f-5c91-435a-bd78-70d153976f92" />
+
+
+
+
 
 
