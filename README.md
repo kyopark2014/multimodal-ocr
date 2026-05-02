@@ -4,7 +4,7 @@
 
 ## PDF to IMG
 
-OCR을 하기 위해서 아래와 같이 PDF에서 각 페이지를 이미지로 추출합니다.
+OCR을 하기 위해서 아래와 같이 PDF에서 각 페이지를 이미지로 추출합니다. 상세한 코드는 [pdf2img.py](./pdf2img/pdf2img.py)을 참조합니다.
 
 ```python
 import fitz
@@ -35,7 +35,7 @@ python pdf2img/pdf2img.py contents/2017-NEC-Code.pdf
 
 ## Image to Text
 
-아래와 같이 이미지를 읽어서 Base64로 변환한 후에 Multimodal LLM으로 text를 추출합니다. LLM 활용을 위해 markdown 형태로 저장합니다.
+아래와 같이 이미지를 읽어서 Base64로 변환한 후에 Multimodal LLM으로 text를 추출합니다. LLM 활용을 위해 markdown 형태로 저장합니다. 상세한 코드는 [img2txt.py](./img2txt/img2txt.py)을 참조합니다.
 
 ```python
 def extract_one(image_path: Path) -> str:
@@ -85,7 +85,7 @@ extracted_text = result.content
 
 
 ```bash
-python img2tet/img2txt.py contents/page_040.png
+python img2txt/img2txt.py contents/page_040.png
 ```
 
 [추출한 이미지](./contents/page_040.png)에 대한 결과는 [추출된 Text](./contents/image_summary_4039b0fb54aa4bb8b46f48b4e219f0b3.md)와 같습니다.
