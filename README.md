@@ -4,7 +4,7 @@
 
 ## PDF to IMG
 
-아래와 같이 PDF에서 각 페이지를 이미지로 저장합니다.
+OCR을 하기 위해서 아래와 같이 PDF에서 각 페이지를 이미지로 추출합니다.
 
 ```python
 import fitz
