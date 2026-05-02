@@ -90,6 +90,8 @@ python img2tet/img2txt.py contents/page_040.png
 
 ## OCR 결과
 
+### 표안의 표
+
 [complex_parsing_hotel_info.png](./contents/complex_parsing_hotel_info.png)을 분석하면 아래와 같습니다.
 
 <img width="600" alt="image" src="./contents/complex_parsing_hotel_info.png" />
@@ -100,6 +102,9 @@ python img2tet/img2txt.py contents/page_040.png
 
 [example-table.png](./contents/example-table.png)에 대해 OCR을 수행합니다.
 
+
+### Table
+
 <img width="600" alt="image" src="./contents/example-table.png" />
 
 이때의 결과는 아래와 같습니다.
@@ -107,6 +112,8 @@ python img2tet/img2txt.py contents/page_040.png
 <img width="934" height="714" alt="image" src="https://github.com/user-attachments/assets/565c7333-02dc-46c5-aab9-05ce860aece7" />
 
 [example-table-and-image.png](./contents/example-table-and-image.png)에 대해 OCR을 수행합니다.
+
+### 표과 이미지
 
 <img width="600" alt="image" src="./contents/example-table-and-image.png" />
 
