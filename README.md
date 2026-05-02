@@ -1,6 +1,6 @@
 # Multi Modal OCR
 
-여기에서는 multi model을 이용해 OCR을 수행합니다. 
+여기에서는 multi model을 이용해 OCR (Optical Character Recognition)을 수행합니다. 
 
 ## PDF to IMG
 
