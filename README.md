@@ -2,7 +2,7 @@
 
 여기에서는 multi model을 이용해 OCR (Optical Character Recognition)을 수행합니다. 
 
-## PDF to IMG
+## PDF to Image
 
 OCR을 하기 위해서 아래와 같이 PDF에서 각 페이지를 이미지로 추출합니다. 상세한 코드는 [pdf2img.py](./pdf2img/pdf2img.py)을 참조합니다.
 
