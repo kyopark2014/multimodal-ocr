@@ -92,6 +92,8 @@ python img2tet/img2txt.py contents/page_040.png
 
 ### 표안의 표
 
+표안의 표가 있는 경우는 대표적인 복잡한 OCR 케이스입니다. 이때 비어있는 항목이 있으면 RAG등에서 활용할 때에 적절한 값을 얻지 못할 수 있습니다.
+
 [complex_parsing_hotel_info.png](./contents/complex_parsing_hotel_info.png)을 분석하면 아래와 같습니다.
 
 <img width="600" alt="image" src="./contents/complex_parsing_hotel_info.png" />
@@ -105,9 +107,11 @@ python img2tet/img2txt.py contents/page_040.png
 
 ### Table
 
+아래 Table의 경우에 왼쪽에 Success / Failure로 구분되어 있고 Capture이 밑에 있습니다. Caption으 함께 보지 않으면 Success/Failure의 의미를 파악하기 어려운 케이스입니다.
+
 <img width="600" alt="image" src="./contents/example-table.png" />
 
-이때의 결과는 아래와 같습니다.
+이때의 결과는 아래와 같습니다. Table 제목 아래에 Success / Failure가 구분되어 있으므로 이해하기 좋습니다. 
 
 <img width="934" height="714" alt="image" src="https://github.com/user-attachments/assets/565c7333-02dc-46c5-aab9-05ce860aece7" />
 
@@ -115,13 +119,15 @@ python img2tet/img2txt.py contents/page_040.png
 
 ### 표과 이미지
 
+아래와 같이 페이지에 표와 이미지가 같이 있는 경우에 표와 이미지를 구분하여 처리하는것은 매우 어려운 OCR 주제입니다.
+
 <img width="600" alt="image" src="./contents/example-table-and-image.png" />
 
-이때의 Table 결과는 아래와 같습니다.
+이때의 Table 결과는 아래와 같습니다. Table에 별도로 결과를 주고 있습니다.
 
 <img width="752" height="437" alt="image" src="https://github.com/user-attachments/assets/acee1dc0-9469-463b-8430-534fcd9d9c1f" />
 
-그림에 대한 OCR 결과는 아래와 같습니다.
+아래는 그림에 대한 OCR 결과입니다. 그림을 해석하여 풀어쓰므로써 LLM이 그림을 활용할 수 있도록 해줍니다.
 
 <img width="941" height="699" alt="image" src="https://github.com/user-attachments/assets/c483660f-5c91-435a-bd78-70d153976f92" />
 
