@@ -96,7 +96,7 @@ python img2tet/img2txt.py contents/page_040.png
 
 [complex_parsing_hotel_info.png](./contents/complex_parsing_hotel_info.png)을 분석하면 아래와 같습니다.
 
-<img width="600" alt="image" src="./contents/complex_parsing_hotel_info.png" />
+<img width="800" alt="image" src="./contents/complex_parsing_hotel_info.png" />
 
 이때의 결과는 아래와 같습니다. 표안의 표가 있는 복잡한 경우이지만 아래처럼 표가 적절히 분석되었습니다.
 
@@ -109,7 +109,7 @@ python img2tet/img2txt.py contents/page_040.png
 
 아래 Table의 경우에 왼쪽에 Success / Failure로 구분되어 있고 Capture이 밑에 있습니다. Caption으 함께 보지 않으면 Success/Failure의 의미를 파악하기 어려운 케이스입니다.
 
-<img width="600" alt="image" src="./contents/example-table.png" />
+<img width="800" alt="image" src="./contents/example-table.png" />
 
 이때의 결과는 아래와 같습니다. Table 제목 아래에 Success / Failure가 구분되어 있으므로 이해하기 좋습니다. 
 
@@ -121,7 +121,7 @@ python img2tet/img2txt.py contents/page_040.png
 
 아래와 같이 페이지에 표와 이미지가 같이 있는 경우에 표와 이미지를 구분하여 처리하는것은 매우 어려운 OCR 주제입니다.
 
-<img width="600" alt="image" src="./contents/example-table-and-image.png" />
+<img width="800" alt="image" src="./contents/example-table-and-image.png" />
 
 이때의 Table 결과는 아래와 같습니다. Table에 별도로 결과를 주고 있습니다.
 
