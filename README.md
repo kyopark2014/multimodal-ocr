@@ -88,4 +88,15 @@ python img2tet/img2txt.py contents/page_040.png
 
 [추출한 이미지](./contents/page_040.png)에 대한 결과는 [추출된 Text](./contents/image_summary_4039b0fb54aa4bb8b46f48b4e219f0b3.md)와 같습니다.
 
+## OCR 결과
+
+[complex_parsing_hotel_info.png](./contents/complex_parsing_hotel_info.png)을 분석하면 아래와 같습니다.
+
+<img width="600" alt="image" src="./contents/complex_parsing_hotel_info.png" />
+
+이때의 결과는 아래와 같습니다. 표안의 표가 있는 복잡한 경우이지만 아래처럼 표가 적절히 분석되었습니다.
+
+<img width="764" height="798" alt="image" src="https://github.com/user-attachments/assets/12eb9547-757a-4768-8b9e-9d564f581a29" />
+
+
 
