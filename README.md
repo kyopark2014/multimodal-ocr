@@ -4,7 +4,7 @@
 
 아래와 같이 PDF에서 각 페이지를 이미지로 저장합니다.
 
-```pytho 
+```python
 import fitz
 doc = fitz.open(pdf_path)
 total = len(doc)
