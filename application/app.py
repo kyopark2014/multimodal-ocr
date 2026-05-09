@@ -10,6 +10,8 @@ import os
 import uuid
 import asyncio
 import io
+import urllib.request
+from urllib.parse import urlparse, unquote
 import langgraph_agent
 import skill
 from notification_queue import NotificationQueue
@@ -231,28 +233,72 @@ if uploaded_file is not None and clear_button==False:
         chat.initiate()
 
         if debugMode=='Enable':
-            status = '선택한 파일을 업로드합니다.'
-            logger.info(f"status: {status}")
-            st.info(status)
+            status_msg = f'선택한 {uploaded_file.name} 파일을 OCR합니다.'
+            logger.info(f"status: {status_msg}")
+            st.info(status_msg)
 
         file_name = uploaded_file.name
-        logger.info(f"uploading... file_name: {file_name}")
-        file_url = chat.upload_to_s3(uploaded_file.getvalue(), file_name)
-        logger.info(f"file_url: {file_url}")
+        logger.info(f"uploading... file: {file_name}")
 
-        import utils
-        utils.sync_data_source()  # sync uploaded files
+        artifacts_dir = langgraph_agent.ARTIFACTS_DIR
+        os.makedirs(artifacts_dir, exist_ok=True)
+        saved_pdf_path = os.path.join(artifacts_dir, file_name)
+        with open(saved_pdf_path, "wb") as f:
+            f.write(uploaded_file.getvalue())
+        logger.info(f"saved uploaded file to: {saved_pdf_path}")
+
+        with st.status("thinking...", expanded=True, state="running") as status:
+            notification_queue = NotificationQueue(container=status)
+
+            response, artifacts = asyncio.run(langgraph_agent.run_langgraph_agent(
+                query=(
+                    f"OCR 처리를 위한 파일을 선택했습니다. "
+                    f"pdf2img skill을 이용해 아래 PDF 파일에서 OCR을 위해 이미지를 추출합니다.\n"
+                    f"- pdf_path: {saved_pdf_path}\n"
+                    f"- output_dir: {os.path.join(artifacts_dir, os.path.splitext(file_name)[0])}"
+                ),
+                mcp_servers=mcp_servers, 
+                skill_list=["pdf2img"],
+                history_mode="Disable", 
+                notification_queue=notification_queue))
             
-        status = f'선택한 "{file_name}"의 내용을 요약합니다.'
-        if debugMode=='Enable':
-            logger.info(f"status: {status}")
-            st.info(status)
-    
-        msg = chat.get_summary_of_uploaded_file(file_name, st)
-        st.session_state.messages.append({"role": "assistant", "content": f"선택한 문서({file_name})를 요약하면 아래와 같습니다.\n\n{msg}"})    
-        logger.info(f"msg: {msg}")
+            response, artifacts = asyncio.run(langgraph_agent.run_langgraph_agent(
+                query=(
+                    f"OCR 처리를 위해 이미지를 추출했습니다."
+                    f"img2text skill을 이용해 아래 폴더의 이미지들을 텍스트로 변환합니다.\n"
+                    f"- image_dir: {os.path.join(artifacts_dir, os.path.splitext(file_name)[0])}"
+                    "생성된 markdown 파일을 S3에 업로드 하지 않습니다."
+                ),
+                mcp_servers=mcp_servers, 
+                skill_list=["img2text"],
+                history_mode="Disable", 
+                notification_queue=notification_queue))
+        st.write(response)
 
-        st.write(msg)
+        # markdown 파일 미리보기
+        pdf_stem = os.path.splitext(file_name)[0]
+        md_path = os.path.join(artifacts_dir, pdf_stem, f"{pdf_stem}.md")
+
+        md_paths = []
+        if os.path.isfile(md_path):
+            md_paths.append(md_path)
+        for artifact in artifacts:
+            if isinstance(artifact, str) and artifact.endswith(".md") and os.path.isfile(artifact) and artifact not in md_paths:
+                md_paths.append(artifact)
+
+        if md_paths:
+            for path in md_paths:
+                with open(path, "r", encoding="utf-8") as f:
+                    markdown_content = f.read()
+                st.markdown(f"### 📄 {os.path.basename(path)}")
+                st.caption(path)
+                st.markdown(markdown_content)
+                st.markdown("---")
+        else:
+            st.warning(f"Markdown 결과 파일을 찾지 못했습니다: {md_path}")
+
+        logger.info(f"response: {response}")
+
 
     if uploaded_file and clear_button==False and mode == '이미지 분석':
         st.image(uploaded_file, caption="이미지 미리보기", use_container_width=True)
@@ -336,12 +382,8 @@ if prompt := st.chat_input("메시지를 입력하세요."):
             
             show_references(reference_docs) 
                 
-        elif mode == 'Agent' or mode == 'Agent (Chat)':            
+        elif mode == 'Agent':            
             sessionState = ""
-            if mode == 'Agent':
-                history_mode = "Disable"
-            else:
-                history_mode = "Enable"
 
             with st.status("thinking...", expanded=True, state="running") as status:
                 notification_queue = NotificationQueue(container=status)
@@ -353,7 +395,7 @@ if prompt := st.chat_input("메시지를 입력하세요."):
                     query=prompt, 
                     mcp_servers=mcp_servers, 
                     skill_list=skill_list,
-                    history_mode=history_mode, 
+                    history_mode="Enable", 
                     notification_queue=notification_queue))
 
             st.session_state.messages.append({
@@ -367,11 +409,56 @@ if prompt := st.chat_input("메시지를 입력하세요."):
                 file_name = url[url.rfind('/')+1:]
                 st.image(url, caption=file_name, use_container_width=True)
 
-        elif mode == '번역하기':
-            response = chat.translate_text(prompt)
-            st.write(response)
+        elif mode == 'OCR Agent':            
+            sessionState = ""
 
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            with st.status("thinking...", expanded=True, state="running") as status:
+                notification_queue = NotificationQueue(container=status)
+
+                response, artifacts = asyncio.run(langgraph_agent.run_ocr_agent(
+                    query=prompt, 
+                    notification_queue=notification_queue))
+
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": response,
+                "artifacts": artifacts if artifacts else []
+            })
+
+            for url in artifacts:
+                logger.info(f"url: {url}")
+                if not isinstance(url, str):
+                    continue
+                file_name = url[url.rfind('/') + 1:]
+
+                if url.lower().endswith(".md"):
+                    markdown_content = None
+                    try:
+                        if url.startswith("http://") or url.startswith("https://"):
+                            rel_path = unquote(urlparse(url).path).lstrip("/")
+                            local_candidate = os.path.join(langgraph_agent.WORKING_DIR, rel_path)
+                            if os.path.isfile(local_candidate):
+                                with open(local_candidate, "r", encoding="utf-8") as f:
+                                    markdown_content = f.read()
+                            else:
+                                with urllib.request.urlopen(url, timeout=15) as r:
+                                    markdown_content = r.read().decode("utf-8", errors="replace")
+                        elif os.path.isfile(url):
+                            with open(url, "r", encoding="utf-8") as f:
+                                markdown_content = f.read()
+                    except Exception as e:
+                        logger.warning(f"failed to load markdown {url}: {e}")
+
+                    if markdown_content is not None:
+                        st.markdown(f"### 📄 {file_name}")
+                        st.caption(url)
+                        st.markdown(markdown_content)
+                        st.markdown("---")
+                    else:
+                        st.warning(f"Markdown 파일을 불러오지 못했습니다: {url}")
+                else:
+                    st.image(url, caption=file_name, use_container_width=True)
+
                 
         else:
             with st.status("thinking...", expanded=True, state="running") as status:

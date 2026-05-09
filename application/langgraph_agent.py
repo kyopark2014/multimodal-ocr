@@ -124,6 +124,40 @@ def _paths_for_ui(relative_paths: list) -> list:
     return out
 
 
+def _merge_artifact_paths(artifacts: list, artifact_paths: list) -> list:
+    """Merge local artifact paths into the artifacts list, dedup by basename.
+
+    `artifacts` already contains tool URLs (S3 URLs, local paths from execute_code, etc.).
+    `artifact_paths` holds local files discovered via the [artifacts] block or write_file.
+    When both reference the same file (same basename), the entry already in `artifacts`
+    is kept so an S3/CloudFront URL takes precedence over its local source path.
+    """
+    def _basename(item) -> str:
+        if not isinstance(item, str):
+            return ""
+        path = item.split("?", 1)[0].split("#", 1)[0]
+        return os.path.basename(path).lower()
+
+    seen = set()
+    merged = []
+    for entry in artifacts:
+        key = _basename(entry)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        merged.append(entry)
+
+    for path in artifact_paths:
+        key = _basename(path)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(path)
+
+    return merged
+
+
 def _ensure_matplotlib_runtime():
     """Use non-interactive Agg backend, prefer CJK-capable fonts, silence headless/show noise."""
     global _mpl_runtime_ready
@@ -506,175 +540,6 @@ def bash(command: str) -> str:
     if result.returncode != 0:
         parts.append(f"Return code: {result.returncode}")
     return "\n".join(parts) if parts else "(no output)"
-
-_wiki_graph_executor = concurrent.futures.ThreadPoolExecutor(
-    max_workers=1, thread_name_prefix="wiki-graph",
-)
-
-_TEXT_EXTS = frozenset({
-    ".md", ".txt", ".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css",
-    ".json", ".yaml", ".yml", ".csv", ".xml", ".toml", ".ini", ".cfg",
-    ".go", ".rs", ".java", ".rb", ".sh", ".sql", ".r", ".c", ".cpp", ".h",
-})
-
-
-def _update_wiki_graph(
-    filepath: Path,
-    filename: str,
-    node_id: str,
-    label: str,
-    captured_at: str,
-    text_content: str,
-    graphify_out: Path,
-    graph_json: Path,
-    source_path: str = "",
-) -> None:
-    """Background worker: build/merge node into graphify knowledge graph."""
-    try:
-        from graphify.build import build_from_json
-        from graphify.cluster import cluster
-        from graphify.export import to_json
-    except ImportError:
-        logger.warning("[wiki-graph] graphify not installed — skipping graph update")
-        return
-
-    try:
-        is_code = filepath.suffix.lower() in (_TEXT_EXTS - {".md", ".txt", ".csv", ".xml"})
-        file_type = "code" if is_code else "document"
-
-        extraction = {
-            "nodes": [{
-                "id": node_id,
-                "label": label,
-                "file_type": file_type,
-                "source_file": f"raw/{filename}",
-                "source_location": source_path or None,
-                "source_url": None,
-                "captured_at": captured_at,
-                "author": None,
-                "contributor": "add_wiki",
-            }],
-            "edges": [],
-            "hyperedges": [],
-            "input_tokens": 0,
-            "output_tokens": 0,
-        }
-
-        if graph_json.exists():
-            from networkx.readwrite import json_graph
-
-            existing_data = json.loads(graph_json.read_text())
-            G = json_graph.node_link_graph(existing_data, edges="links")
-
-            G_new = build_from_json(extraction)
-            G.update(G_new)
-
-            matched_edges = 0
-            if text_content:
-                content_lower = text_content.lower()
-                for nid, ndata in G.nodes(data=True):
-                    if nid == node_id:
-                        continue
-                    node_label = ndata.get("label", "")
-                    if not node_label:
-                        continue
-                    node_label_lower = node_label.lower()
-                    if len(node_label_lower) >= 4 and node_label_lower in content_lower:
-                        score = min(0.6 + 0.05 * len(node_label_lower.split()), 0.85)
-                        G.add_edge(node_id, nid,
-                            relation="conceptually_related_to",
-                            confidence="INFERRED",
-                            confidence_score=round(score, 2),
-                            source_file=f"raw/{filename}",
-                            source_location=None,
-                            weight=1.0,
-                        )
-                        matched_edges += 1
-
-            communities = cluster(G)
-            to_json(G, communities, str(graph_json))
-            logger.info(
-                f"[wiki-graph] Updated: node='{label}', "
-                f"edges={matched_edges}, total={G.number_of_nodes()} nodes / {G.number_of_edges()} edges"
-            )
-        else:
-            G = build_from_json(extraction)
-            communities = cluster(G)
-            to_json(G, communities, str(graph_json))
-            logger.info(f"[wiki-graph] Created new graph: node='{label}'")
-
-        (graphify_out / ".needs_update").write_text(str(filepath))
-
-    except Exception:
-        logger.error(f"[wiki-graph] Background update failed:\n{traceback.format_exc()}")
-
-
-def add_to_wiki(source: str) -> str:
-    """Core logic: add content or a file to the wiki knowledge graph.
-
-    Auto-detects whether *source* is a file path (copied to wiki/raw/) or
-    raw text content (saved as a new .md file).  Graph update is submitted
-    to the background thread pool and returns immediately.
-    """
-    wiki_dir = Path.home() / "Documents" / "wiki"
-    raw_dir = wiki_dir / "raw"
-    graphify_out = wiki_dir / "graphify-out"
-    graph_json = graphify_out / "graph.json"
-
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    graphify_out.mkdir(parents=True, exist_ok=True)
-
-    now = datetime.datetime.now()
-    ts = now.strftime("%Y%m%d_%H%M%S_") + f"{now.microsecond // 1000:03d}"
-    captured_at = now.strftime("%Y-%m-%d")
-    source_path_str = ""
-
-    src = Path(source)
-    if src.is_file():
-        ext = src.suffix or ".bin"
-        filename = f"knowledge_{ts}{ext}"
-        filepath = raw_dir / filename
-        _shutil.copy2(str(src), str(filepath))
-        source_path_str = str(src)
-
-        label = src.stem
-        text_content = ""
-        if ext.lower() in _TEXT_EXTS:
-            try:
-                text_content = filepath.read_text(encoding="utf-8")
-            except Exception:
-                pass
-    else:
-        filename = f"knowledge_{ts}.md"
-        filepath = raw_dir / filename
-        filepath.write_text(source, encoding="utf-8")
-        text_content = source
-
-        label = filename
-        for line in source.strip().split("\n"):
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                label = stripped.lstrip("#").strip()
-                break
-            elif stripped:
-                label = stripped[:80]
-                break
-
-    node_id = f"raw_{filename.replace('.', '_').replace('-', '_')}"
-
-    _wiki_graph_executor.submit(
-        _update_wiki_graph,
-        filepath, filename, node_id, label, captured_at,
-        text_content, graphify_out, graph_json, source_path_str,
-    )
-
-    logger.info(f"[add_to_wiki] queued: {filepath} (source={source_path_str or 'content'})")
-    return (
-        f"Knowledge saved — graph update in progress.\n"
-        f"- File: {filepath}\n"
-        f"- Node: '{label}'"
-    )
-
 
 def get_builtin_tools() -> list:
     """Return the list of built-in tools for the skill-aware agent."""
@@ -1142,12 +1007,21 @@ async def run_langgraph_agent(query: str, mcp_servers: list, skill_list: list, h
                         artifact_paths.append(saved)
                         logger.info(f"artifact_paths from write_file: {saved}")
 
+                if tool_name == "upload_file_to_s3" and toolResult.startswith("Upload complete:"):
+                    uploaded_url = toolResult.split("Upload complete:", 1)[1].strip()
+                    if uploaded_url.startswith("http://") or uploaded_url.startswith("https://"):
+                        artifacts.append(uploaded_url)
+                        logger.info(f"artifacts from upload_file_to_s3: {uploaded_url}")
+
             if tool_content:
                 logger.info(f"content: {tool_content}")        
     
     if not result:
         result = "답변을 찾지 못하였습니다."        
     logger.info(f"result: {result}")
+
+    artifacts = _merge_artifact_paths(artifacts, artifact_paths)
+    logger.info(f"final artifacts: {artifacts}")
 
     if references:
         ref = "\n\n### Reference\n"
@@ -1159,12 +1033,147 @@ async def run_langgraph_agent(query: str, mcp_servers: list, skill_list: list, h
     if notification_queue is not None and chat.debug_mode == "Enable":
         chat.update_final_result(notification_queue, result)
 
-    wiki_targets = list(dict.fromkeys(artifacts + artifact_paths))
-    for fpath in wiki_targets:
-        if os.path.isfile(fpath):
-            try:
-                add_to_wiki(fpath)
-            except Exception as e:
-                logger.warning(f"[wiki-push] Failed for {fpath}: {e}")
+    return result, artifacts
+
+async def run_ocr_agent(query: str, notification_queue: NotificationQueue =None) -> tuple[str, list]:
+    global app, config, active_mcp_servers, active_skills, current_id
+
+    mcp_servers = ["web_fetch"]
+    skill_list = ["pdf2img", "img2text"]
+    history_mode = "Disable"
+    
+    queue = notification_queue if notification_queue else None
+    if queue:
+        queue.reset()
+
+    artifacts = []
+    artifact_paths = []
+    references = []
+
+    prompt = (
+        f"사용자 요청: {query}\n"
+        "다음의 순서대로 OCR 처리를 진행합니다.\n"
+        "1. pdf2img skill을 이용해 PDF 파일에서 OCR을 위해 이미지를 추출합니다.\n"
+        "2. img2text skill을 이용해 이미지들을 markdown 형태로 변환합니다.\n"
+        "3. makedown 파일은 s3에 업로드후에 경로를 리턴합니다.\n"
+    )
+
+    app, config = await create_agent(mcp_servers, skill_list, history_mode)
+    
+    if app is None:
+        logger.error("Failed to create agent - app is None")
+        return "에이전트를 생성할 수 없습니다. MCP 서버 설정 또는 도구 구성을 확인해주세요.", []
+    
+    inputs = {
+        "messages": [HumanMessage(content=prompt)]
+    }
+            
+    result = ""
+    tool_used = False  # Track if tool was used
+    tool_name = toolUseId = ""
+    async for stream in app.astream(inputs, config, stream_mode="messages"):
+        if isinstance(stream[0], AIMessageChunk):
+            message = stream[0]    
+            input = {}        
+            if isinstance(message.content, list):
+                for content_item in message.content:
+                    if isinstance(content_item, dict):
+                        if content_item.get('type') == 'text':
+                            text_content = content_item.get('text', '')
+                            # logger.info(f"text_content: {text_content}")
+                            
+                            # If tool was used, start fresh result
+                            if tool_used:
+                                result = text_content
+                                tool_used = False
+                            else:
+                                result += text_content
+                                
+                            # logger.info(f"result: {result}")                
+                            if chat.debug_mode == "Enable" and queue:
+                                chat.update_streaming_result(notification_queue, result, "markdown")
+
+                        elif content_item.get('type') == 'tool_use':
+                            # logger.info(f"content_item: {content_item}")      
+                            if 'id' in content_item and 'name' in content_item:
+                                toolUseId = content_item.get('id', '')
+                                tool_name = content_item.get('name', '')
+                                logger.info(f"tool_name: {tool_name}, toolUseId: {toolUseId}")
+                                if queue:
+                                    queue.register_tool(toolUseId, tool_name)
+                                                                    
+                            if 'partial_json' in content_item:
+                                partial_json = content_item.get('partial_json', '')
+                                
+                                if toolUseId not in chat.tool_input_list:
+                                    chat.tool_input_list[toolUseId] = ""                                
+                                chat.tool_input_list[toolUseId] += partial_json
+                                input = chat.tool_input_list[toolUseId]
+
+                                if queue:
+                                    queue.tool_update(toolUseId, f"Tool: {tool_name}, Input: {input}")
+                        
+        elif isinstance(stream[0], ToolMessage):
+            message = stream[0]
+            logger.info(f"ToolMessage: {message.name}, {message.content}")
+            tool_name = message.name
+            toolResult = message.content
+            toolUseId = message.tool_call_id
+            logger.info(f"toolResult: {toolResult}, toolUseId: {toolUseId}")
+            if chat.debug_mode == "Enable":
+                chat.add_notification(notification_queue, f"Tool Result: {toolResult}")
+            tool_used = True
+            
+            tool_content, tool_urls, refs = chat.get_tool_info(tool_name, toolResult)
+            if refs:
+                for r in refs:
+                    references.append(r)
+                logger.info(f"refs: {refs}")
+            if tool_urls:
+                for url in tool_urls:
+                    artifacts.append(url)
+                logger.info(f"tool_urls: {tool_urls}")
+
+            if isinstance(toolResult, str):
+                if "[artifacts]" in toolResult:
+                    for line in toolResult.split("[artifacts]")[-1].strip().split("\n"):
+                        line = line.strip()
+                        if line and os.path.isfile(line):
+                            artifact_paths.append(line)
+                    logger.info(f"artifact_paths from text: {artifact_paths}")
+
+                if tool_name == "write_file" and toolResult.startswith("File saved:"):
+                    saved = toolResult.split("File saved:", 1)[1].strip()
+                    if not os.path.isabs(saved):
+                        saved = os.path.join(WORKING_DIR, saved)
+                    if os.path.isfile(saved) and os.path.abspath(saved).startswith(os.path.abspath(ARTIFACTS_DIR)):
+                        artifact_paths.append(saved)
+                        logger.info(f"artifact_paths from write_file: {saved}")
+
+                if tool_name == "upload_file_to_s3" and toolResult.startswith("Upload complete:"):
+                    uploaded_url = toolResult.split("Upload complete:", 1)[1].strip()
+                    if uploaded_url.startswith("http://") or uploaded_url.startswith("https://"):
+                        artifacts.append(uploaded_url)
+                        logger.info(f"artifacts from upload_file_to_s3: {uploaded_url}")
+
+            if tool_content:
+                logger.info(f"content: {tool_content}")        
+    
+    if not result:
+        result = "답변을 찾지 못하였습니다."        
+    logger.info(f"result: {result}")
+
+    artifacts = _merge_artifact_paths(artifacts, artifact_paths)
+    logger.info(f"final artifacts: {artifacts}")
+
+    if references:
+        ref = "\n\n### Reference\n"
+        for i, reference in enumerate(references):
+            page_content = reference['content'][:100].replace("\n", "")
+            ref += f"{i+1}. [{reference['title']}]({reference['url']}), {page_content}...\n"    
+        result += ref
+    
+    if notification_queue is not None and chat.debug_mode == "Enable":
+        chat.update_final_result(notification_queue, result)
 
     return result, artifacts
