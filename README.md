@@ -8,32 +8,64 @@
 
 ```mermaid
 flowchart TB
-  UI["Streamlit UI (app.py)"]
-
-  subgraph Modes["모드별 처리"]
-    CHAT["chat.py\n· 일상적인 대화\n· RAG\n· 이미지 분석"]
-    AGENT["langgraph_agent.py\n· Agent\n· OCR Agent"]
+  subgraph UI["Streamlit UI (app.py)"]
+    MODE["모드 선택"]
+    CONFIG["Skill · MCP · 모델 · PDF 업로드"]
   end
 
-  BR["Amazon Bedrock"]
-
-  subgraph Capabilities["Agent 확장"]
-    SK["Skills\npdf2img · img2text · skill-creator"]
-    MCP["MCP Servers\nknowledge base · web_fetch · ..."]
-    TOOL["Built-in Tools\nexecute_code · write_file · bash · ..."]
+  subgraph Chat["chat.py"]
+    GC[general_conversation]
+    RAG[run_rag_with_knowledge_base]
+    IMG[summarize_image]
   end
 
-  STORE["artifacts/ · S3"]
+  subgraph Agent["langgraph_agent.py"]
+    RLA[run_langgraph_agent]
+    ROA[run_ocr_agent]
+    LG["LangGraph Agent\n(call_model · ToolNode)"]
+    BT["Built-in Tools\nexecute_code · bash · write_file · read_file · upload_file_to_s3"]
+  end
 
-  UI --> CHAT
-  UI --> AGENT
-  CHAT --> BR
-  AGENT --> BR
-  AGENT --> SK
-  AGENT --> MCP
-  AGENT --> TOOL
-  TOOL --> STORE
-  CHAT --> STORE
+  subgraph Skills["skill.py · application/skills/"]
+    BSP[build_skill_prompt]
+    GSI[get_skill_instructions]
+    OCR["pdf2img · img2text · skill-creator"]
+  end
+
+  subgraph MCP["mcp_config.py"]
+    SRV["knowledge base · aws_documentation · web_fetch\ntext_extraction · obsidian · 사용자 설정"]
+  end
+
+  subgraph Bedrock["Amazon Bedrock"]
+    BR[Bedrock Runtime / ChatBedrock]
+    KB[(Knowledge Base)]
+  end
+
+  STORE["application/artifacts/ · S3"]
+
+  MODE -->|일상적인 대화| GC
+  MODE -->|RAG| RAG
+  MODE -->|이미지 분석| IMG
+  MODE -->|Agent| RLA
+  MODE -->|OCR Agent| ROA
+  CONFIG -->|skill_list · mcp_servers| RLA
+
+  GC --> BR
+  RAG --> BR
+  RAG --> KB
+  IMG --> BR
+
+  RLA --> LG
+  ROA --> LG
+  LG --> BR
+  LG --> BT
+  LG --> GSI
+  LG --> SRV
+  BSP -->|system_prompt| LG
+  GSI --> OCR
+
+  BT --> STORE
+  IMG --> STORE
 ```
 
 | 모드 | 진입 함수 | 설명 |
