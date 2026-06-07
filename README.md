@@ -8,98 +8,32 @@
 
 ```mermaid
 flowchart TB
-  subgraph UI["Streamlit UI (application/app.py)"]
-    MODE["모드: 일상적인 대화 / RAG / Agent / OCR Agent / 이미지 분석"]
-    SEL["Skill 선택 · MCP 선택 · 모델 선택 · PDF 업로드"]
+  UI["Streamlit UI (app.py)"]
+
+  subgraph Modes["모드별 처리"]
+    CHAT["chat.py\n· 일상적인 대화\n· RAG\n· 이미지 분석"]
+    AGENT["langgraph_agent.py\n· Agent\n· OCR Agent"]
   end
 
-  subgraph Chat["chat.py"]
-    GC[general_conversation]
-    RAG[run_rag_with_knowledge_base]
-    SUM[summarize_image]
-    GTB[get_chat / ChatBedrock]
-    UPS[upload_to_s3]
+  BR["Amazon Bedrock"]
+
+  subgraph Capabilities["Agent 확장"]
+    SK["Skills\npdf2img · img2text · skill-creator"]
+    MCP["MCP Servers\nknowledge base · web_fetch · ..."]
+    TOOL["Built-in Tools\nexecute_code · write_file · bash · ..."]
   end
 
-  subgraph LLM["Amazon Bedrock"]
-    BR[Bedrock Runtime]
-    KB[(Knowledge Base / retrieve)]
-  end
+  STORE["artifacts/ · S3"]
 
-  subgraph LG["LangGraph Agent (application/langgraph_agent.py)"]
-    RLA[run_langgraph_agent]
-    ROA[run_ocr_agent]
-    BCA[buildChatAgent / WithHistory]
-    CM[call_model 노드]
-    TN[ToolNode]
-    BT["Built-in tools: execute_code, bash, write_file, read_file, upload_file_to_s3, get_current_time"]
-    MCPA[langchain-mcp-adapters · MultiServerMCPClient]
-  end
-
-  subgraph Skills["Agent Skills (application/skill.py · application/skills/)"]
-    SM[SkillManager]
-    BSP[build_skill_prompt]
-    GSI[get_skill_instructions tool]
-    SK1["pdf2img/SKILL.md"]
-    SK2["img2text/SKILL.md"]
-    SK3["skill-creator/SKILL.md"]
-  end
-
-  subgraph MCPServers["MCP Servers (mcp_config.py)"]
-    KBM["knowledge base (mcp_server_retrieve.py)"]
-    AWSD["aws_documentation (awslabs)"]
-    WF["web_fetch (mcp-server-fetch-typescript)"]
-    TX["text_extraction (mcp_server_text_extraction.py)"]
-    OBS["obsidian (obsidian-mcp)"]
-    USR["사용자 설정 (user_defined_mcp.json)"]
-  end
-
-  subgraph Storage["Artifacts / S3"]
-    ART["application/artifacts/"]
-    S3[(Amazon S3)]
-  end
-
-  subgraph Standalone["Standalone CLI"]
-    P2I["pdf2img/pdf2img.py"]
-    I2T["img2txt/img2txt.py"]
-  end
-
-  MODE -->|일상적인 대화| GC
-  MODE -->|RAG| RAG
-  MODE -->|이미지 분석| SUM
-  MODE -->|Agent| RLA
-  MODE -->|OCR Agent| ROA
-  SEL -->|skill_list| RLA
-  SEL -->|mcp_servers| RLA
-  SEL -->|PDF 업로드| RLA
-
-  GC --> GTB
-  RAG --> GTB
-  RAG --> KB
-  SUM --> GTB
-  GTB --> BR
-
-  RLA --> BCA
-  ROA --> BCA
-  BCA --> CM
-  BCA --> TN
-  CM --> GTB
-  TN --> BT
-  TN --> MCPA
-  TN --> GSI
-
-  BSP -->|system_prompt| CM
-  GSI --> SM
-  SM --> SK1
-  SM --> SK2
-  SM --> SK3
-
-  MCPA --> MCPServers
-  KBM --> KB
-
-  BT --> ART
-  BT --> S3
-  SUM --> UPS --> S3
+  UI --> CHAT
+  UI --> AGENT
+  CHAT --> BR
+  AGENT --> BR
+  AGENT --> SK
+  AGENT --> MCP
+  AGENT --> TOOL
+  TOOL --> STORE
+  CHAT --> STORE
 ```
 
 | 모드 | 진입 함수 | 설명 |
