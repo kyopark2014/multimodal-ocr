@@ -2,6 +2,122 @@
 
 여기에서는 multi model을 이용해 OCR (Optical Character Recognition)을 수행합니다. 
 
+### Operation Architecture
+
+전체 애플리케이션은 Streamlit UI(`application/app.py`)를 진입점으로 하며, 모드에 따라 일반 대화/RAG/Agent/OCR Agent로 분기합니다. Agent 계열은 LangGraph(`langgraph_agent.py`) 위에서 Built-in 도구, Anthropic Agent Skills 스펙(`skill.py`), MCP 서버(`mcp_config.py`)를 결합해 동작합니다.
+
+```mermaid
+flowchart TB
+  subgraph UI["Streamlit UI (application/app.py)"]
+    MODE["모드: 일상적인 대화 / RAG / Agent / OCR Agent / 이미지 분석"]
+    SEL["Skill 선택 · MCP 선택 · 모델 선택 · PDF 업로드"]
+  end
+
+  subgraph Chat["chat.py"]
+    GC[general_conversation]
+    RAG[run_rag_with_knowledge_base]
+    SUM[summarize_image]
+    GTB[get_chat / ChatBedrock]
+    UPS[upload_to_s3]
+  end
+
+  subgraph LLM["Amazon Bedrock"]
+    BR[Bedrock Runtime]
+    KB[(Knowledge Base / retrieve)]
+  end
+
+  subgraph LG["LangGraph Agent (application/langgraph_agent.py)"]
+    RLA[run_langgraph_agent]
+    ROA[run_ocr_agent]
+    BCA[buildChatAgent / WithHistory]
+    CM[call_model 노드]
+    TN[ToolNode]
+    BT["Built-in tools: execute_code, bash, write_file, read_file, upload_file_to_s3, get_current_time"]
+    MCPA[langchain-mcp-adapters · MultiServerMCPClient]
+  end
+
+  subgraph Skills["Agent Skills (application/skill.py · application/skills/)"]
+    SM[SkillManager]
+    BSP[build_skill_prompt]
+    GSI[get_skill_instructions tool]
+    SK1["pdf2img/SKILL.md"]
+    SK2["img2text/SKILL.md"]
+    SK3["skill-creator/SKILL.md"]
+  end
+
+  subgraph MCPServers["MCP Servers (mcp_config.py)"]
+    KBM["knowledge base (mcp_server_retrieve.py)"]
+    AWSD["aws_documentation (awslabs)"]
+    WF["web_fetch (mcp-server-fetch-typescript)"]
+    TX["text_extraction (mcp_server_text_extraction.py)"]
+    OBS["obsidian (obsidian-mcp)"]
+    USR["사용자 설정 (user_defined_mcp.json)"]
+  end
+
+  subgraph Storage["Artifacts / S3"]
+    ART["application/artifacts/"]
+    S3[(Amazon S3)]
+  end
+
+  subgraph Standalone["Standalone CLI"]
+    P2I["pdf2img/pdf2img.py"]
+    I2T["img2txt/img2txt.py"]
+  end
+
+  MODE -->|일상적인 대화| GC
+  MODE -->|RAG| RAG
+  MODE -->|이미지 분석| SUM
+  MODE -->|Agent| RLA
+  MODE -->|OCR Agent| ROA
+  SEL -->|skill_list| RLA
+  SEL -->|mcp_servers| RLA
+  SEL -->|PDF 업로드| RLA
+
+  GC --> GTB
+  RAG --> GTB
+  RAG --> KB
+  SUM --> GTB
+  GTB --> BR
+
+  RLA --> BCA
+  ROA --> BCA
+  BCA --> CM
+  BCA --> TN
+  CM --> GTB
+  TN --> BT
+  TN --> MCPA
+  TN --> GSI
+
+  BSP -->|system_prompt| CM
+  GSI --> SM
+  SM --> SK1
+  SM --> SK2
+  SM --> SK3
+
+  MCPA --> MCPServers
+  KBM --> KB
+
+  BT --> ART
+  BT --> S3
+  SUM --> UPS --> S3
+```
+
+| 모드 | 진입 함수 | 설명 |
+|------|-----------|------|
+| 일상적인 대화 | `chat.general_conversation` | 대화 이력 + Bedrock Runtime 스트리밍 응답 |
+| RAG | `chat.run_rag_with_knowledge_base` | Bedrock Knowledge Base `retrieve` 후 Bedrock Runtime으로 답변 생성 |
+| Agent | `langgraph_agent.run_langgraph_agent` | LangGraph + Built-in tools + Agent Skills + MCP (사용자 선택) |
+| OCR Agent | `langgraph_agent.run_ocr_agent` | `pdf2img` → `img2text` Skill을 자동 오케스트레이션해 PDF를 Markdown으로 변환 |
+| 이미지 분석 | `chat.summarize_image` | ChatBedrock 멀티모달(이미지 + 텍스트) 분석 후 Markdown 아티팩트를 S3에 업로드 |
+
+#### 주요 구성 요소
+
+- **Built-in Tools** (`langgraph_agent.get_builtin_tools`): `execute_code`, `bash`, `write_file`, `read_file`, `get_current_time`, 그리고 `sharing_url`이 설정된 경우 `upload_file_to_s3`.
+- **Agent Skills** (`application/skills/`): Anthropic Agent Skills 스펙을 따르는 `SKILL.md`를 자동 탐색합니다. 현재 번들된 스킬은 `pdf2img`(PDF → 페이지 이미지), `img2text`(이미지 폴더 → 통합 Markdown), `skill-creator`(스킬 생성 도우미)입니다.
+- **MCP Servers** (`mcp_config.load_config`): `knowledge base`, `aws_documentation`, `web_fetch`, `text_extraction`, `obsidian`, `사용자 설정`(`user_defined_mcp.json`).
+- **아티팩트 저장소**: 도구 실행 산출물은 `application/artifacts/`에 저장되며, `upload_file_to_s3`를 통해 S3 및 `sharing_url`(예: CloudFront)로 공유됩니다.
+
+
 ## PDF to Image
 
 OCR을 하기 위해서 아래와 같이 PDF에서 각 페이지를 이미지로 추출합니다. 상세한 코드는 [pdf2img.py](./pdf2img/pdf2img.py)을 참조합니다.
